@@ -71,7 +71,7 @@
                         android:padding="8dp"></LinearLayout>
 
                     <ImageView
-                        android:id="@+id/iconFile"
+                        android:id="@+id/ic_file"
                         android:layout_width="30dp"
                         android:layout_height="30dp"
                         android:src="@drawable/ic_file" />

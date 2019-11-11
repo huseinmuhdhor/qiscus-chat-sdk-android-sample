@@ -1,10 +1,6 @@
 package com.qiscus.mychatui.ui.adapter;
 
 import android.content.Context;
-
-import androidx.annotation.Nullable;
-import androidx.core.content.ContextCompat;
-import androidx.recyclerview.widget.RecyclerView;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -13,6 +9,10 @@ import android.webkit.MimeTypeMap;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.request.RequestOptions;
 import com.qiscus.mychatui.R;
@@ -26,6 +26,7 @@ import com.qiscus.sdk.chat.core.data.model.QiscusComment;
 import com.qiscus.sdk.chat.core.data.remote.QiscusApi;
 import com.qiscus.sdk.chat.core.util.QiscusAndroidUtil;
 import com.qiscus.sdk.chat.core.util.QiscusDateUtil;
+import com.qiscus.sdk.chat.core.util.QiscusFileUtil;
 
 import org.json.JSONObject;
 
@@ -50,7 +51,6 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
     private static final int TYPE_MY_FILE = 5;
     private static final int TYPE_OPPONENT_FILE = 6;
 
-
     private Context context;
     private long lastDeliveredCommentId;
     private long lastReadCommentId;
@@ -59,10 +59,13 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         this.context = context;
     }
 
-    public interface RecyclerViewItemClickListener {
-        void onItemClick(View view, int position);
-
-        void onItemLongClick(View view, int position);
+    public static String getMimeType(String url) {
+        String type = null;
+        String extension = MimeTypeMap.getFileExtensionFromUrl(url);
+        if (extension != null) {
+            type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+        }
+        return type;
     }
 
     @Override
@@ -92,31 +95,13 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         switch (comment.getType()) {
             case TEXT:
                 return comment.isMyComment() ? TYPE_MY_TEXT : TYPE_OPPONENT_TEXT;
-            case CUSTOM:
-                try {
-                    JSONObject obj = new JSONObject(comment.getExtraPayload());
-                    String type = obj.getString("type");
-                    if (type.contains("image")) {
-                        return comment.isMyComment() ? TYPE_MY_IMAGE : TYPE_OPPONENT_IMAGE;
-                    } else {
-                        return comment.isMyComment() ? TYPE_MY_FILE : TYPE_OPPONENT_FILE;
-                    }
-                } catch (Throwable t) {
-                    return comment.isMyComment() ? TYPE_MY_TEXT : TYPE_OPPONENT_TEXT;
-                }
-
+            case IMAGE:
+                return comment.isMyComment() ? TYPE_MY_IMAGE : TYPE_OPPONENT_IMAGE;
+            case FILE:
+                return comment.isMyComment() ? TYPE_MY_FILE : TYPE_OPPONENT_FILE;
             default:
                 return comment.isMyComment() ? TYPE_MY_TEXT : TYPE_OPPONENT_TEXT;
         }
-    }
-
-    public static String getMimeType(String url) {
-        String type = null;
-        String extension = MimeTypeMap.getFileExtensionFromUrl(url);
-        if (extension != null) {
-            type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
-        }
-        return type;
     }
 
     @Override
@@ -158,7 +143,6 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
     @Override
     public void onBindViewHolder(VH holder, int position) {
         holder.bind(getData().get(position));
-        holder.position = position;
 
         if (position == getData().size() - 1) {
             holder.setNeedToShowDate(true);
@@ -242,6 +226,12 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         }
     }
 
+    public interface RecyclerViewItemClickListener {
+        void onItemClick(View view, int position);
+
+        void onItemLongClick(View view, int position);
+    }
+
     static class VH extends RecyclerView.ViewHolder {
         private ImageView avatar;
         private TextView sender;
@@ -249,11 +239,9 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         private TextView dateOfMessage;
         @Nullable
         private ImageView state;
-
         private int pendingStateColor;
         private int readStateColor;
         private int failedStateColor;
-        public int position = 0;
 
         VH(View itemView) {
             super(itemView);
@@ -395,10 +383,9 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
 
             try {
                 JSONObject obj = new JSONObject(comment.getExtraPayload());
-                JSONObject content = obj.getJSONObject("content");
-                String url = content.getString("url");
-                String caption = content.getString("caption");
-                String filename = content.getString("file_name");
+                String url = obj.getString("url");
+                String caption = obj.getString("caption");
+                String filename = obj.getString("file_name");
 
                 if (url.startsWith("http")) { //We have sent it
                     showSentImage(comment, url);
@@ -427,15 +414,12 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
                     dateOfMessage.setText(DateUtil.toFullDate(comment.getTime()));
                 }
 
-                thumbnail.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        File localPath = QiscusCore.getDataStore().getLocalPath(comment.getId());
-                        if (localPath != null) {
-                            Toast.makeText(itemView.getContext(),"Image already in the gallery",Toast.LENGTH_SHORT).show();
-                        }else{
-                            downloadFile(comment,filename,url);
-                        }
+                thumbnail.setOnClickListener(v -> {
+                    File localPath = QiscusCore.getDataStore().getLocalPath(comment.getId());
+                    if (localPath != null) {
+                        Toast.makeText(itemView.getContext(), "Image already in the gallery", Toast.LENGTH_SHORT).show();
+                    } else {
+                        downloadFile(comment, filename, url);
                     }
                 });
 
@@ -461,7 +445,7 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(file -> {
                         //on success
-                        Toast.makeText(itemView.getContext(),"success save image to gallery",Toast.LENGTH_SHORT).show();
+                        Toast.makeText(itemView.getContext(), "success save image to gallery", Toast.LENGTH_SHORT).show();
                     }, throwable -> {
                         //on error
                     });
@@ -495,7 +479,7 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
                                 .placeholder(R.drawable.ic_qiscus_add_image)
                                 .error(R.drawable.ic_qiscus_add_image)
                                 .dontAnimate())
-                        .load(url)
+                        .load(QiscusFileUtil.getThumbnailURL(url))
                         .into(thumbnail);
             }
         }
@@ -511,12 +495,13 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         }
     }
 
-    static class FileVH extends VH implements QiscusComment.ProgressListener, QiscusComment.DownloadingListener  {
+    static class FileVH extends VH implements QiscusComment.ProgressListener, QiscusComment.DownloadingListener {
         private TextView fileName;
         private TextView sender;
         private TextView dateOfMessage;
         private QiscusProgressView progress;
         private ImageView icFile;
+
 
         FileVH(View itemView) {
             super(itemView);
@@ -545,9 +530,8 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
 
             try {
                 JSONObject obj = new JSONObject(comment.getExtraPayload());
-                JSONObject content = obj.getJSONObject("content");
-                String url = content.getString("url");
-                String filename = content.getString("file_name");
+                String url = obj.getString("url");
+                String filename = obj.getString("file_name");
                 fileName.setText(filename);
 
                 if (dateOfMessage != null) {
@@ -560,9 +544,9 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
                         File localPath = QiscusCore.getDataStore().getLocalPath(comment.getId());
                         if (localPath != null) {
                             QiscusImageUtil.addImageToGallery(localPath);
-                            Toast.makeText(itemView.getContext(),"File already save",Toast.LENGTH_SHORT).show();
-                        }else{
-                            downloadFile(comment,filename,url);
+                            Toast.makeText(itemView.getContext(), "File already save", Toast.LENGTH_SHORT).show();
+                        } else {
+                            downloadFile(comment, filename, url);
                         }
                     }
                 });
@@ -590,10 +574,10 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
         public void onProgress(QiscusComment qiscusComment, int percentage) {
             progress.setProgress(percentage);
             icFile.setVisibility(View.GONE);
-            if (percentage == 100){
+            if (percentage == 100) {
                 progress.setVisibility(View.GONE);
                 icFile.setVisibility(View.VISIBLE);
-            }else{
+            } else {
                 progress.setVisibility(View.VISIBLE);
                 icFile.setVisibility(View.GONE);
             }
@@ -620,7 +604,7 @@ public class CommentsAdapter extends SortedRecyclerViewAdapter<QiscusComment, Co
                     .observeOn(AndroidSchedulers.mainThread())
                     .subscribe(file -> {
                         //on success
-                        Toast.makeText(itemView.getContext(),"Success save file",Toast.LENGTH_SHORT).show();
+                        Toast.makeText(itemView.getContext(), "Success save file", Toast.LENGTH_SHORT).show();
                     }, throwable -> {
                         //on error
                     });

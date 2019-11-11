@@ -196,12 +196,8 @@ public class QiscusChatPresenter extends QiscusPresenter<QiscusChatPresenter.Vie
 
     public void sendFile(File file, String caption) {
         File compressedFile = file;
-        Boolean isImage = false;
-        String fileAttachment = "image";
-        String sendMassage = "Send Image";
         if (QiscusFileUtil.isImage(file.getPath()) && !file.getName().endsWith(".gif")) {
             try {
-                isImage = true;
                 compressedFile = new Compressor(QiscusCore.getApps()).compressToFile(file);
             } catch (NullPointerException | IOException e) {
                 view.showError(QiscusTextUtil.getString(R.string.qiscus_corrupted_file));
@@ -216,21 +212,7 @@ public class QiscusChatPresenter extends QiscusPresenter<QiscusChatPresenter.Vie
             return;
         }
 
-        JSONObject json = new JSONObject();
-        try {
-            json.put("url", compressedFile.getPath())
-                    .put("caption", caption)
-                    .put("file_name", file.getName());
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        if (isImage == false) {
-            fileAttachment = "file";
-            sendMassage = "Send FIle";
-        }
-
-        QiscusComment qiscusComment = QiscusComment.generateCustomMessage(room.getId(), sendMassage, fileAttachment, json);
+        QiscusComment qiscusComment = QiscusComment.generateFileAttachmentMessage(room.getId(), compressedFile.getPath(), caption, compressedFile.getName());
 
         qiscusComment.setDownloading(true);
         view.onSendingComment(qiscusComment);
@@ -245,8 +227,7 @@ public class QiscusChatPresenter extends QiscusPresenter<QiscusChatPresenter.Vie
                 .flatMap(uri -> {
                     try {
                         JSONObject jsonData = new JSONObject(qiscusComment.getExtraPayload());
-                        JSONObject content = jsonData.getJSONObject("content");
-                        content.put("url", uri);
+                        jsonData.put("url", uri);
                         qiscusComment.setExtraPayload(jsonData.toString());
                     } catch (Exception e) {
                         e.printStackTrace();
